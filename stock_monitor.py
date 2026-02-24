@@ -38,14 +38,21 @@ FUNDS = [
     {"ticker": "SPTE", "name": "SP Funds S&P Global Technology ETF", "category": "Technology", "expense_ratio": 0.55},
     {"ticker": "SPWO", "name": "SP Funds S&P World ex-US ETF", "category": "International Equity", "expense_ratio": 0.55},
     
-    # Wahed ETFs
-    {"ticker": "HLAL", "name": "Wahed FTSE USA Shariah ETF", "category": "US Equity Large/Mid-Cap", "expense_ratio": 0.50},
-    {"ticker": "UMMA", "name": "Wahed Dow Jones Islamic World ETF", "category": "International Equity", "expense_ratio": 0.65},
-    
     # SP Funds Target Date Mutual Funds
     {"ticker": "SPTAX", "name": "SP Funds 2030 Target Date Fund", "category": "Target Date 2030", "expense_ratio": 1.40},
     {"ticker": "SPTBX", "name": "SP Funds 2040 Target Date Fund", "category": "Target Date 2040", "expense_ratio": 1.40},
     {"ticker": "SPTCX", "name": "SP Funds 2050 Target Date Fund", "category": "Target Date 2050", "expense_ratio": 1.40},
+    
+    # Wahed ETFs
+    {"ticker": "HLAL", "name": "Wahed FTSE USA Shariah ETF", "category": "US Equity Large/Mid-Cap", "expense_ratio": 0.50},
+    {"ticker": "UMMA", "name": "Wahed Dow Jones Islamic World ETF", "category": "International Equity", "expense_ratio": 0.65},
+    
+    # Manzil ETF
+    {"ticker": "MNZL", "name": "Manzil Russell 1000 Shariah ETF", "category": "US Broad Market", "expense_ratio": 0.25},
+    
+    # Amana Mutual Funds
+    {"ticker": "AMANX", "name": "Amana Income Fund", "category": "US Equity Income", "expense_ratio": 0.79},
+    {"ticker": "AMAGX", "name": "Amana Growth Fund", "category": "US Equity Growth", "expense_ratio": 0.88},
 ]
 
 # Combine all tickers for data fetching
@@ -240,35 +247,249 @@ Format your response as JSON:
             return self.fallback_format(indexes_data, funds_data, news)
     
     def fallback_format(self, indexes_data: List[Dict], funds_data: List[Dict], news: List[Dict]) -> Dict:
-        """Fallback formatting without Claude"""
-        html_email = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
-            <h2>📊 Daily Stock Report - {datetime.now().strftime('%B %d, %Y')}</h2>
-            
-            <h3>Market Indexes</h3>
-            <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
-                <tr style="background-color: #f0f0f0;">
-                    <th>Symbol</th><th>Name</th><th>Price</th><th>Day %</th><th>3M %</th><th>MTD %</th><th>YTD %</th>
-                </tr>
-                {"".join([f"<tr><td>{s['ticker']}</td><td>{s['name']}</td><td>${s['price']:.2f}</td><td style='color: {'green' if s['day_change'] >= 0 else 'red'}'>{s['day_change']:.2f}%</td><td>{s['three_month_return']:.2f}%</td><td>{s['mtd_return']:.2f}%</td><td>{s['ytd_return']:.2f}%</td></tr>" for s in indexes_data])}
+        """Fallback formatting without Claude - uses glassmorphism design"""
+        
+        # Generate index rows
+        index_rows = ""
+        for stock in indexes_data:
+            day_class = "positive" if stock['day_change'] >= 0 else "negative"
+            day_sign = "+" if stock['day_change'] >= 0 else ""
+            index_rows += f"""
+                <tr>
+                    <td class="ticker"><a href="https://finance.yahoo.com/quote/{stock['ticker']}" target="_blank">{stock['ticker']}</a></td>
+                    <td class="name">{stock['name']}</td>
+                    <td class="price">${stock['price']:.2f}</td>
+                    <td class="center {day_class}">{day_sign}{stock['day_change']:.2f}%</td>
+                    <td class="center positive">+{stock['three_month_return']:.2f}%</td>
+                    <td class="center positive">+{stock['mtd_return']:.2f}%</td>
+                    <td class="center positive">+{stock['ytd_return']:.2f}%</td>
+                </tr>"""
+        
+        # Generate fund rows  
+        fund_rows = ""
+        for stock in funds_data:
+            day_class = "positive" if stock['day_change'] >= 0 else "negative"
+            day_sign = "+" if stock['day_change'] >= 0 else ""
+            fund_rows += f"""
+                <tr>
+                    <td class="ticker"><a href="https://finance.yahoo.com/quote/{stock['ticker']}" target="_blank">{stock['ticker']}</a></td>
+                    <td class="name">{stock['name']}</td>
+                    <td class="category">{stock['category']}</td>
+                    <td class="price">${stock['price']:.2f}</td>
+                    <td class="center {day_class}">{day_sign}{stock['day_change']:.2f}%</td>
+                    <td class="center positive">+{stock['three_month_return']:.2f}%</td>
+                    <td class="center positive">+{stock['mtd_return']:.2f}%</td>
+                    <td class="center positive">+{stock['ytd_return']:.2f}%</td>
+                    <td class="expense">{stock['expense_ratio']:.2f}%</td>
+                </tr>"""
+        
+        # Generate news rows
+        news_rows = ""
+        for item in news[:5]:
+            region = "🇺🇸 USA" if "USA" in item.get('region', '') else "🌍 Global"
+            news_rows += f"""
+                <tr>
+                    <td>{region}</td>
+                    <td><a href="{item['link']}" target="_blank" class="news-link">{item['title']}</a></td>
+                    <td class="source">{item['source']}</td>
+                    <td class="time">{item.get('published', 'Recent')}</td>
+                </tr>"""
+        
+        html_email = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #a8c0ff 0%, #d4c5f9 50%, #e5dff9 100%);
+            padding: 40px 20px;
+        }}
+        .container {{ max-width: 1200px; margin: 0 auto; }}
+        .header-card {{
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 32px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.15);
+        }}
+        .header-title {{
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 12px;
+        }}
+        .beta-badge {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-left: 8px;
+        }}
+        .header-text {{
+            color: #4a4a6a;
+            line-height: 1.6;
+            font-size: 15px;
+        }}
+        .date-header {{
+            text-align: center;
+            color: #1a1a2e;
+            margin-bottom: 30px;
+            font-size: 18px;
+            font-weight: 600;
+        }}
+        .section-header {{
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin: 30px 0 16px 0;
+            padding-left: 8px;
+        }}
+        .table-card {{
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 0;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.12);
+            overflow: hidden;
+        }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        th.right {{ text-align: right; }}
+        th.center {{ text-align: center; }}
+        td {{
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            color: #1a1a2e;
+            font-size: 14px;
+        }}
+        tr:last-child td {{ border-bottom: none; }}
+        tbody tr {{ transition: all 0.2s ease; }}
+        tbody tr:hover {{ background: rgba(102, 126, 234, 0.05); }}
+        .ticker {{ font-weight: 700; font-size: 15px; }}
+        .ticker a {{ color: #667eea; text-decoration: none; font-weight: 700; }}
+        .ticker a:hover {{ text-decoration: underline; }}
+        .name {{ color: #6b7280; font-size: 13px; }}
+        .category {{ color: #6b7280; font-size: 12px; }}
+        .price {{ font-weight: 700; text-align: right; }}
+        .positive {{ color: #10b981; font-weight: 600; }}
+        .negative {{ color: #ef4444; font-weight: 600; }}
+        .center {{ text-align: center; }}
+        .right {{ text-align: right; }}
+        .expense {{ text-align: center; font-size: 13px; color: #6b7280; }}
+        .news-link {{ color: #1a1a2e; text-decoration: none; font-weight: 600; }}
+        .news-link:hover {{ color: #667eea; text-decoration: underline; }}
+        .source {{ color: #9ca3af; font-size: 12px; }}
+        .time {{ color: #9ca3af; font-size: 12px; text-align: right; }}
+        .footer {{
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            padding: 20px;
+            margin-top: 40px;
+            text-align: center;
+            font-size: 12px;
+            color: #6b7280;
+            line-height: 1.6;
+            box-shadow: 0 4px 16px rgba(31, 38, 135, 0.08);
+        }}
+        .footer strong {{ color: #1a1a2e; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-card">
+            <div class="header-title">
+                👋 Hey! Welcome to My Halal Stock Lab
+                <span class="beta-badge">Beta</span>
+            </div>
+            <div class="header-text">
+                This is my experimental playground for tracking Sharia-compliant markets. Built entirely with Claude Code and a lot of coffee ☕. 
+                Since it's AI-powered, occasional hiccups are part of the charm! All data is for informational purposes only—do your own research before making any investment decisions. 
+                Let's make halal investing awesome together! 🚀
+            </div>
+        </div>
+        <div class="date-header">📊 Sharia-Compliant Stock Monitor • {datetime.now().strftime('%B %d, %Y')}</div>
+        
+        <div class="section-header">📈 Market Indexes</div>
+        <div class="table-card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Name</th>
+                        <th class="right">Price</th>
+                        <th class="center">Day %</th>
+                        <th class="center">3M %</th>
+                        <th class="center">MTD %</th>
+                        <th class="center">YTD %</th>
+                    </tr>
+                </thead>
+                <tbody>{index_rows}</tbody>
             </table>
-            
-            <h3>Sharia-Compliant Funds</h3>
-            <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
-                <tr style="background-color: #f0f0f0;">
-                    <th>Symbol</th><th>Name</th><th>Category</th><th>Price</th><th>Day %</th><th>3M %</th><th>MTD %</th><th>YTD %</th><th>Expense Ratio</th>
-                </tr>
-                {"".join([f"<tr><td>{s['ticker']}</td><td>{s['name']}</td><td>{s['category']}</td><td>${s['price']:.2f}</td><td style='color: {'green' if s['day_change'] >= 0 else 'red'}'>{s['day_change']:.2f}%</td><td>{s['three_month_return']:.2f}%</td><td>{s['mtd_return']:.2f}%</td><td>{s['ytd_return']:.2f}%</td><td>{s['expense_ratio']:.2f}%</td></tr>" for s in funds_data])}
+        </div>
+        
+        <div class="section-header">🕌 Sharia-Compliant Funds</div>
+        <div class="table-card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th class="right">Price</th>
+                        <th class="center">Day %</th>
+                        <th class="center">3M %</th>
+                        <th class="center">MTD %</th>
+                        <th class="center">YTD %</th>
+                        <th class="center">Expense</th>
+                    </tr>
+                </thead>
+                <tbody>{fund_rows}</tbody>
             </table>
-            
-            <h3>📰 Sharia-Compliant Investing News</h3>
-            <ul>
-                {"".join([f"<li><a href='{n['link']}'>{n['title']}</a> - {n['source']}</li>" for n in news[:5]])}
-            </ul>
-        </body>
-        </html>
-        """
+        </div>
+        
+        <div class="section-header">📰 Sharia-Compliant Investing News</div>
+        <div class="table-card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Region</th>
+                        <th>Headline</th>
+                        <th>Source</th>
+                        <th class="right">Time</th>
+                    </tr>
+                </thead>
+                <tbody>{news_rows}</tbody>
+            </table>
+        </div>
+        
+        <div class="footer">
+            <strong>Disclaimer:</strong> This dashboard is provided for informational and educational purposes only. 
+            All data is sourced from Yahoo Finance and Google News and may contain errors or delays. 
+            This is not financial advice. Always do your own research and consult with a qualified financial advisor before investing. 
+            Past performance does not guarantee future results. Sharia compliance determinations are based on fund provider classifications 
+            and should be independently verified with qualified Islamic scholars.
+        </div>
+    </div>
+</body>
+</html>"""
         
         return {
             "executive_summary": f"Portfolio tracking {len(indexes_data) + len(funds_data)} securities",
