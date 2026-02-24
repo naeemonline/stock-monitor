@@ -235,7 +235,7 @@ Return your response in this exact JSON format:
         }
     
     def send_email(self, html_content: str, subject: str):
-        """Send email via SendGrid"""
+        """Send email via Resend or SendGrid"""
         if not self.sendgrid_api_key or not self.email_to:
             print("⚠️  Email not configured (missing SENDGRID_API_KEY or EMAIL_TO)")
             return
@@ -243,27 +243,46 @@ Return your response in this exact JSON format:
         print("📧 Sending email...")
         
         try:
-            url = "https://api.sendgrid.com/v3/mail/send"
-            headers = {
-                "Authorization": f"Bearer {self.sendgrid_api_key}",
-                "Content-Type": "application/json"
-            }
+            # Check if using Resend (API key starts with 're_') or SendGrid (starts with 'SG.')
+            is_resend = self.sendgrid_api_key.startswith('re_')
             
-            data = {
-                "personalizations": [{
-                    "to": [{"email": self.email_to}]
-                }],
-                "from": {"email": self.email_from or "stock-monitor@yourdomain.com"},
-                "subject": subject,
-                "content": [{
-                    "type": "text/html",
-                    "value": html_content
-                }]
-            }
+            if is_resend:
+                # Resend API
+                url = "https://api.resend.com/emails"
+                headers = {
+                    "Authorization": f"Bearer {self.sendgrid_api_key}",
+                    "Content-Type": "application/json"
+                }
+                data = {
+                    "from": self.email_from or "onboarding@resend.dev",
+                    "to": [self.email_to],
+                    "subject": subject,
+                    "html": html_content
+                }
+                success_code = 200
+            else:
+                # SendGrid API
+                url = "https://api.sendgrid.com/v3/mail/send"
+                headers = {
+                    "Authorization": f"Bearer {self.sendgrid_api_key}",
+                    "Content-Type": "application/json"
+                }
+                data = {
+                    "personalizations": [{
+                        "to": [{"email": self.email_to}]
+                    }],
+                    "from": {"email": self.email_from or "stock-monitor@yourdomain.com"},
+                    "subject": subject,
+                    "content": [{
+                        "type": "text/html",
+                        "value": html_content
+                    }]
+                }
+                success_code = 202
             
             response = requests.post(url, headers=headers, json=data)
             
-            if response.status_code == 202:
+            if response.status_code in [200, 202]:
                 print(f"✅ Email sent to {self.email_to}")
             else:
                 print(f"❌ Email failed: {response.status_code} - {response.text}")
