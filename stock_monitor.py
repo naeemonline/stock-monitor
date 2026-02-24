@@ -280,21 +280,20 @@ Return your response in this exact JSON format:
         print("📢 Posting to Microsoft Teams...")
         
         try:
-            # If Claude didn't provide a card, create a simple one
-            if not teams_card:
-                teams_card = {
-                    "@type": "MessageCard",
-                    "@context": "https://schema.org/extensions",
-                    "summary": "Daily Stock Report",
-                    "themeColor": "0078D4",
-                    "title": f"📊 Daily Stock Report - {datetime.now().strftime('%B %d, %Y')}",
-                    "text": summary
-                }
+            # Always use a simple, reliable card format
+            card = {
+                "@type": "MessageCard",
+                "@context": "https://schema.org/extensions",
+                "summary": "Daily Stock Report",
+                "themeColor": "0078D4",
+                "title": f"📊 Daily Stock Report - {datetime.now().strftime('%B %d, %Y')}",
+                "text": summary if summary else "Stock report generated successfully. Check your email for details."
+            }
             
             response = requests.post(
                 self.teams_webhook,
                 headers={"Content-Type": "application/json"},
-                json=teams_card
+                json=card
             )
             
             if response.status_code == 200:
