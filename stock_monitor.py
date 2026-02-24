@@ -17,14 +17,21 @@ from typing import Dict, List, Any
 # ============================================================================
 
 TICKERS = [
-    # Major Indices
-    "SPY", "QQQ", "DIA", "INX", "IXIC", "DJI",
+    # Major Indices (use ^ prefix for index symbols)
+    "SPY", "QQQ", "DIA",  # ETFs tracking major indices
     
-    # Your stocks - ADD YOUR 25-30 TICKERS HERE
-    "SPUS", "SPSK", "SPRE", "SPTE", "SPWO", "HLAL", "UMMA", "AMAP",
-    "ISWD", "ISDE", "ISUS", "WSHR", "IGDA", "HIUA", "HIES", "MWLV",
+    # SP Funds ETFs - UPDATE THESE WITH YOUR ACTUAL HOLDINGS
+    "SPUS",   # SP Funds S&P 500 Sharia Industry Exclusions ETF
     
-    # Add more tickers as needed...
+    # Other Islamic Finance ETFs
+    "HLAL",   # Wahed FTSE USA Shariah ETF
+    "UMMA",   # Wahed Dow Jones Islamic World ETF
+    
+    # Large Cap Tech (commonly Sharia-compliant)
+    "AAPL", "MSFT", "GOOGL", "NVDA", "META",
+    
+    # Add more of your actual holdings below...
+    # Example: "AMZN", "TSLA", "ADBE", "CRM", etc.
 ]
 
 class StockMonitor:
@@ -55,10 +62,10 @@ class StockMonitor:
             three_months_ago = today - timedelta(days=90)
             year_start = datetime(today.year, 1, 1)
             
-            # Get historical prices
-            hist_month = hist[hist.index >= pd.Timestamp(month_ago)]
-            hist_3m = hist[hist.index >= pd.Timestamp(three_months_ago)]
-            hist_ytd = hist[hist.index >= pd.Timestamp(year_start)]
+            # Get historical prices - make timestamps timezone-aware
+            hist_month = hist[hist.index >= pd.Timestamp(month_ago, tz=hist.index.tz)]
+            hist_3m = hist[hist.index >= pd.Timestamp(three_months_ago, tz=hist.index.tz)]
+            hist_ytd = hist[hist.index >= pd.Timestamp(year_start, tz=hist.index.tz)]
             
             # Calculate returns
             day_change = ((current_price - prev_close) / prev_close * 100)
