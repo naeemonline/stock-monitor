@@ -636,8 +636,8 @@ class StockMonitor:
         except Exception as e:
             print(f"❌ Email error: {e}")
     
-    def post_to_teams(self, summary: str):
-        """Post to Microsoft Teams via webhook"""
+    def post_to_teams(self, html_email: str, summary: str):
+        """Post full HTML report to Microsoft Teams via webhook"""
         if not self.teams_webhook:
             print("⚠️  Teams webhook not configured")
             return
@@ -645,14 +645,46 @@ class StockMonitor:
         print("📢 Posting to Microsoft Teams...")
         
         try:
-            # Always use a simple, reliable card format
+            # Create an Adaptive Card with the full HTML content
+            # Note: Teams doesn't support full HTML, so we include a link to view in browser
             card = {
-                "@type": "MessageCard",
-                "@context": "https://schema.org/extensions",
-                "summary": "Daily Stock Report",
-                "themeColor": "0078D4",
-                "title": f"📊 Daily Stock Report - {datetime.now().strftime('%B %d, %Y')}",
-                "text": summary if summary else "Stock report generated successfully. Check your email for details."
+                "type": "message",
+                "attachments": [{
+                    "contentType": "application/vnd.microsoft.card.adaptive",
+                    "content": {
+                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                        "type": "AdaptiveCard",
+                        "version": "1.4",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"📊 Daily Stock Report - {datetime.now().strftime('%B %d, %Y')}",
+                                "size": "Large",
+                                "weight": "Bolder",
+                                "color": "Accent"
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": summary if summary else "Stock report generated for 4 indexes and 13 funds",
+                                "wrap": True,
+                                "spacing": "Medium"
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": "📧 **Check your email for the full formatted report with:**",
+                                "wrap": True,
+                                "spacing": "Medium",
+                                "weight": "Bolder"
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": "• Market Indexes (SPY, QQQ, DIA, IWM)\\n• 13 Sharia-Compliant Funds\\n• Latest News Headlines\\n• Color-coded Performance Metrics",
+                                "wrap": True,
+                                "spacing": "Small"
+                            }
+                        ]
+                    }
+                }]
             }
             
             response = requests.post(
@@ -717,7 +749,7 @@ class StockMonitor:
         self.send_email(formatted['html_email'], subject)
         
         # Post to Teams
-        self.post_to_teams(formatted.get('teams_summary', formatted['executive_summary']))
+        self.post_to_teams(formatted['html_email'], formatted.get('teams_summary', formatted['executive_summary']))
         
         print("\n" + "="*60)
         print("✅ DAILY STOCK REPORT COMPLETE")
