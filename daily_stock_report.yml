@@ -1,0 +1,25 @@
+name: Daily Stock Report
+on: [workflow_dispatch]
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - run: pip install --upgrade pip && pip install anthropic yfinance pandas requests feedparser
+    - run: python stock_monitor.py
+      env:
+        RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+    - uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: stock-report-logs
+        path: '*.log'
+        retention-days: 7
