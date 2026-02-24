@@ -1,6 +1,8 @@
 name: Daily Stock Report
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 23 * * 1-5'
 jobs:
   generate-report:
     runs-on: ubuntu-latest
