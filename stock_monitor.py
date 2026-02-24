@@ -177,74 +177,9 @@ class StockMonitor:
             return []
     
     def format_with_claude(self, indexes_data: List[Dict], funds_data: List[Dict], news: List[Dict]) -> Dict:
-        """Use Claude to format the data into email and Teams content"""
-        if not self.anthropic_api_key:
-            return self.fallback_format(indexes_data, funds_data, news)
-        
-        try:
-            client = Anthropic(api_key=self.anthropic_api_key)
-            
-            prompt = f"""You are a financial reporting assistant. Format this stock market data into a professional daily report.
-
-TODAY'S DATE: {datetime.now().strftime('%A, %B %d, %Y')}
-
-MARKET INDEXES:
-{json.dumps(indexes_data, indent=2)}
-
-SHARIA-COMPLIANT FUNDS:
-{json.dumps(funds_data, indent=2)}
-
-TOP NEWS (prioritized: USA Sharia-compliant news first, then global):
-{json.dumps(news, indent=2)}
-
-Generate a response with EXACTLY this structure:
-
-1. EXECUTIVE SUMMARY (2-3 sentences about market performance and key trends)
-
-2. HTML EMAIL with these sections IN THIS ORDER:
-   a) Market Indexes table (separate from funds)
-   b) Sharia-Compliant Funds table 
-   c) Top News (Sharia-compliant investing focus)
-
-TABLE REQUIREMENTS:
-- Columns in this EXACT order: Symbol | Name | Category | Price | Day % | 3M % | MTD % | YTD % | Expense Ratio
-- Color code: green for positive, red for negative
-- Clean, minimalist design (white background, simple borders)
-- Expense Ratio column: show as "X.XX%" or "—" for indexes
-
-3. TEAMS SUMMARY (1-2 sentences max)
-
-Format your response as JSON:
-{{
-  "executive_summary": "...",
-  "html_email": "...",
-  "teams_summary": "..."
-}}"""
-
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=4000,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            
-            content = response.content[0].text
-            
-            # Extract JSON from response (handle markdown code blocks)
-            json_match = re.search(r'```json\s*(\{.*?\})\s*```', content, re.DOTALL)
-            if json_match:
-                content = json_match.group(1)
-            
-            result = json.loads(content)
-            
-            return {
-                "executive_summary": result.get("executive_summary", "Market data updated."),
-                "html_email": result.get("html_email", ""),
-                "teams_summary": result.get("teams_summary", "")
-            }
-            
-        except Exception as e:
-            print(f"❌ Claude API error: {e}")
-            return self.fallback_format(indexes_data, funds_data, news)
+        """Use fallback format directly - our HTML template is already perfect"""
+        # Always use our beautiful email-compatible template
+        return self.fallback_format(indexes_data, funds_data, news)
     
     def fallback_format(self, indexes_data: List[Dict], funds_data: List[Dict], news: List[Dict]) -> Dict:
         """Fallback formatting without Claude - email-compatible design"""
