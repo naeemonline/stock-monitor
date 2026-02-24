@@ -636,8 +636,8 @@ class StockMonitor:
         except Exception as e:
             print(f"❌ Email error: {e}")
     
-    def post_to_teams(self, html_email: str, summary: str):
-        """Post full HTML report to Microsoft Teams via webhook"""
+    def post_to_teams(self, indexes_data: List[Dict], funds_data: List[Dict], news: List[Dict], summary: str):
+        """Post full data tables to Microsoft Teams via Adaptive Card"""
         if not self.teams_webhook:
             print("⚠️  Teams webhook not configured")
             return
@@ -645,8 +645,37 @@ class StockMonitor:
         print("📢 Posting to Microsoft Teams...")
         
         try:
-            # Create an Adaptive Card with the full HTML content
-            # Note: Teams doesn't support full HTML, so we include a link to view in browser
+            # Build index table facts
+            index_facts = []
+            for stock in indexes_data[:4]:  # Limit to 4 indexes
+                day_change = stock['day_change']
+                day_emoji = "📈" if day_change >= 0 else "📉"
+                index_facts.append({
+                    "title": f"{day_emoji} {stock['ticker']}",
+                    "value": f"${stock['price']:.2f} | Day: {day_change:+.2f}% | 3M: {stock['three_month_return']:+.2f}% | YTD: {stock['ytd_return']:+.2f}%"
+                })
+            
+            # Build top 5 funds facts
+            fund_facts = []
+            for stock in funds_data[:5]:  # Top 5 funds
+                day_change = stock['day_change']
+                day_emoji = "📈" if day_change >= 0 else "📉"
+                fund_facts.append({
+                    "title": f"{day_emoji} {stock['ticker']}",
+                    "value": f"${stock['price']:.2f} | Day: {day_change:+.2f}% | Expense: {stock['expense_ratio']:.2f}%"
+                })
+            
+            # Build news items
+            news_items = []
+            for item in news[:3]:  # Top 3 news
+                news_items.append({
+                    "type": "TextBlock",
+                    "text": f"• [{item['source']}]({item['link']}) {item['title']}",
+                    "wrap": True,
+                    "spacing": "Small"
+                })
+            
+            # Create comprehensive Adaptive Card
             card = {
                 "type": "message",
                 "attachments": [{
@@ -658,29 +687,57 @@ class StockMonitor:
                         "body": [
                             {
                                 "type": "TextBlock",
-                                "text": f"📊 Daily Stock Report - {datetime.now().strftime('%B %d, %Y')}",
-                                "size": "Large",
+                                "text": f"📊 Daily Stock Report",
+                                "size": "ExtraLarge",
                                 "weight": "Bolder",
                                 "color": "Accent"
                             },
                             {
                                 "type": "TextBlock",
-                                "text": summary if summary else "Stock report generated for 4 indexes and 13 funds",
-                                "wrap": True,
+                                "text": datetime.now().strftime('%A, %B %d, %Y'),
+                                "size": "Medium",
+                                "color": "Default",
+                                "spacing": "None"
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": "📈 Market Indexes",
+                                "size": "Large",
+                                "weight": "Bolder",
                                 "spacing": "Medium"
                             },
                             {
-                                "type": "TextBlock",
-                                "text": "📧 **Check your email for the full formatted report with:**",
-                                "wrap": True,
-                                "spacing": "Medium",
-                                "weight": "Bolder"
+                                "type": "FactSet",
+                                "facts": index_facts,
+                                "spacing": "Small"
                             },
                             {
                                 "type": "TextBlock",
-                                "text": "• Market Indexes (SPY, QQQ, DIA, IWM)\\n• 13 Sharia-Compliant Funds\\n• Latest News Headlines\\n• Color-coded Performance Metrics",
-                                "wrap": True,
+                                "text": "🕌 Top Sharia-Compliant Funds",
+                                "size": "Large",
+                                "weight": "Bolder",
+                                "spacing": "Medium"
+                            },
+                            {
+                                "type": "FactSet",
+                                "facts": fund_facts,
                                 "spacing": "Small"
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": f"📰 Latest News ({len(news_items)} headlines)",
+                                "size": "Large",
+                                "weight": "Bolder",
+                                "spacing": "Medium"
+                            }
+                        ] + news_items + [
+                            {
+                                "type": "TextBlock",
+                                "text": f"✉️ Check your email for the complete formatted report with all {len(funds_data)} funds and detailed analytics.",
+                                "wrap": True,
+                                "spacing": "Medium",
+                                "size": "Small",
+                                "isSubtle": True
                             }
                         ]
                     }
@@ -748,8 +805,8 @@ class StockMonitor:
         subject = f"📊 Daily Stock Report - {datetime.now().strftime('%b %d, %Y')}"
         self.send_email(formatted['html_email'], subject)
         
-        # Post to Teams
-        self.post_to_teams(formatted['html_email'], formatted.get('teams_summary', formatted['executive_summary']))
+        # Post to Teams with full data
+        self.post_to_teams(indexes_data, funds_data, news, formatted.get('teams_summary', formatted['executive_summary']))
         
         print("\n" + "="*60)
         print("✅ DAILY STOCK REPORT COMPLETE")
