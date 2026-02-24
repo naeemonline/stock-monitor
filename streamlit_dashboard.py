@@ -1,165 +1,206 @@
-"""
-Minimalist Stock Dashboard - Streamlit Interface
-Clean tables, simple charts, real-time data
-"""
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
-import plotly.graph_objects as go
+import plotly.express as px
 
-# Page configuration
+# Page config
 st.set_page_config(
-    page_title="Stock Monitor Dashboard",
+    page_title="Sharia-Compliant Stock Monitor",
     page_icon="📊",
     layout="wide"
 )
 
-# Same tickers as in stock_monitor.py
-TICKERS = [
-    "SPY", "QQQ", "DIA", "INX", "IXIC", "DJI",
-    
-    # Your stocks - ADD YOUR 25-30 TICKERS HERE
-    "SPUS", "SPSK", "SPRE", "SPTE", "SPWO", "HLAL", "UMMA", "AMAP",
-    "ISWD", "ISDE", "ISUS", "WSHR", "IGDA", "HIUA", "HIES", "MWLV",
+# ============================================================================
+# CONFIGURATION  
+# ============================================================================
 
+# Market Indexes
+INDEXES = [
+    {"ticker": "SPY", "name": "S&P 500", "category": "Index"},
+    {"ticker": "QQQ", "name": "Nasdaq 100", "category": "Index"},
+    {"ticker": "DIA", "name": "Dow Jones", "category": "Index"},
+    {"ticker": "IWM", "name": "Russell 2000", "category": "Index"},
 ]
 
-# Custom CSS for minimalist design
-st.markdown("""
-<style>
-    .main {
-        padding: 2rem;
-    }
-    .stDataFrame {
-        font-size: 14px;
-    }
-    h1 {
-        font-weight: 300;
-        margin-bottom: 1rem;
-    }
-    .metric-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 4px;
-        border-left: 3px solid #0078D4;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Sharia-Compliant Funds
+FUNDS = [
+    # SP Funds ETFs
+    {"ticker": "SPUS", "name": "SP Funds S&P 500 Sharia", "category": "US Equity Large-Cap", "expense_ratio": 0.49},
+    {"ticker": "SPSK", "name": "SP Funds Global Sukuk", "category": "Fixed Income", "expense_ratio": 0.55},
+    {"ticker": "SPRE", "name": "SP Funds Global REIT Sharia", "category": "Real Estate", "expense_ratio": 0.59},
+    {"ticker": "SPTE", "name": "SP Funds Global Technology", "category": "Technology", "expense_ratio": 0.55},
+    {"ticker": "SPWO", "name": "SP Funds World ex-US", "category": "International Equity", "expense_ratio": 0.55},
+    
+    # Wahed ETFs
+    {"ticker": "HLAL", "name": "Wahed FTSE USA Shariah", "category": "US Equity", "expense_ratio": 0.50},
+    {"ticker": "UMMA", "name": "Wahed Islamic World", "category": "International Equity", "expense_ratio": 0.65},
+    
+    # Manzil
+    {"ticker": "MNZL", "name": "Manzil Russell Halal USA", "category": "US Broad Market", "expense_ratio": 0.25},
+    
+    # Amana Mutual Funds
+    {"ticker": "AMANX", "name": "Amana Income Fund", "category": "US Equity Income", "expense_ratio": 0.79},
+    {"ticker": "AMAGX", "name": "Amana Growth Fund", "category": "US Equity Growth", "expense_ratio": 0.88},
+]
+
+# ============================================================================
+# DATA FETCHING
+# ============================================================================
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
-def fetch_stock_data(tickers):
-    """Fetch data for all stocks"""
-    data = []
-    
-    for ticker in tickers:
-        try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="1y")
-            
-            if hist.empty:
-                continue
-            
-            current_price = hist['Close'].iloc[-1]
-            prev_close = hist['Close'].iloc[-2] if len(hist) > 1 else current_price
-            
-            # Calculate returns
-            today = datetime.now()
-            month_ago = today - timedelta(days=30)
-            three_months_ago = today - timedelta(days=90)
-            year_start = datetime(today.year, 1, 1)
-            
-            hist_month = hist[hist.index >= pd.Timestamp(month_ago)]
-            hist_3m = hist[hist.index >= pd.Timestamp(three_months_ago)]
-            hist_ytd = hist[hist.index >= pd.Timestamp(year_start)]
-            
-            day_change = ((current_price - prev_close) / prev_close * 100)
-            mtd_return = ((current_price - hist_month['Close'].iloc[0]) / hist_month['Close'].iloc[0] * 100) if len(hist_month) > 0 else 0
-            three_m_return = ((current_price - hist_3m['Close'].iloc[0]) / hist_3m['Close'].iloc[0] * 100) if len(hist_3m) > 0 else 0
-            ytd_return = ((current_price - hist_ytd['Close'].iloc[0]) / hist_ytd['Close'].iloc[0] * 100) if len(hist_ytd) > 0 else 0
-            
-            info = stock.info
-            
-            data.append({
-                'Ticker': ticker,
-                'Name': info.get('longName', ticker)[:30],
-                'Price': f"${current_price:.2f}",
-                'Day %': f"{day_change:+.2f}%",
-                'MTD %': f"{mtd_return:+.2f}%",
-                'YTD %': f"{ytd_return:+.2f}%",
-                '3M %': f"{three_m_return:+.2f}%",
-                'Sector': info.get('sector', 'N/A'),
-                'day_change_num': day_change  # For sorting
-            })
-        except:
-            continue
-    
-    return pd.DataFrame(data)
+def fetch_stock_data(ticker, metadata):
+    """Fetch stock data with returns calculation"""
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        current_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
+        if not current_price:
+            return None
+        
+        # Get historical data
+        hist = stock.history(period="1y")
+        if hist.empty:
+            return None
+        
+        # Calculate returns
+        today = datetime.now()
+        month_ago = today - timedelta(days=30)
+        three_months_ago = today - timedelta(days=90)
+        year_start = datetime(today.year, 1, 1)
+        
+        hist_month = hist[hist.index >= pd.Timestamp(month_ago, tz=hist.index.tz)]
+        hist_3m = hist[hist.index >= pd.Timestamp(three_months_ago, tz=hist.index.tz)]
+        hist_ytd = hist[hist.index >= pd.Timestamp(year_start, tz=hist.index.tz)]
+        
+        mtd_return = ((current_price / hist_month['Close'].iloc[0]) - 1) * 100 if len(hist_month) > 0 else 0
+        three_month_return = ((current_price / hist_3m['Close'].iloc[0]) - 1) * 100 if len(hist_3m) > 0 else 0
+        ytd_return = ((current_price / hist_ytd['Close'].iloc[0]) - 1) * 100 if len(hist_ytd) > 0 else 0
+        day_change = info.get('regularMarketChangePercent', 0)
+        
+        return {
+            "Symbol": ticker,
+            "Name": metadata.get("name", ticker),
+            "Category": metadata.get("category", "N/A"),
+            "Price": f"${current_price:.2f}",
+            "Day %": day_change,
+            "3M %": three_month_return,
+            "MTD %": mtd_return,
+            "YTD %": ytd_return,
+            "Expense Ratio": f"{metadata.get('expense_ratio', 0):.2f}%" if metadata.get('expense_ratio') else "—",
+        }
+    except Exception as e:
+        st.error(f"Error fetching {ticker}: {e}")
+        return None
 
-def color_negative_red(val):
-    """Color negative values red, positive green"""
-    if isinstance(val, str) and '%' in val:
-        num = float(val.replace('%', '').replace('+', ''))
-        color = '#00AA00' if num > 0 else '#DD0000' if num < 0 else '#666666'
-        return f'color: {color}; font-weight: 500'
-    return ''
+def load_all_data():
+    """Load data for all indexes and funds"""
+    indexes_data = []
+    funds_data = []
+    
+    # Load indexes
+    for item in INDEXES:
+        data = fetch_stock_data(item["ticker"], item)
+        if data:
+            data["Expense Ratio"] = "—"  # Indexes don't have expense ratios
+            indexes_data.append(data)
+    
+    # Load funds
+    for item in FUNDS:
+        data = fetch_stock_data(item["ticker"], item)
+        if data:
+            funds_data.append(data)
+    
+    return indexes_data, funds_data
 
-# Main app
-st.title("📊 Stock Monitor Dashboard")
+# ============================================================================
+# UI
+# ============================================================================
+
+st.title("📊 Sharia-Compliant Stock Monitor")
 st.caption(f"Last updated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
 
 # Load data
-with st.spinner('Loading stock data...'):
-    df = fetch_stock_data(TICKERS)
-
-if df.empty:
-    st.error("Could not load stock data. Please try again later.")
-    st.stop()
+with st.spinner("Loading market data..."):
+    indexes_data, funds_data = load_all_data()
 
 # Summary metrics
 col1, col2, col3, col4 = st.columns(4)
 
-with col1:
-    st.metric("Total Stocks", len(df))
+total_securities = len(indexes_data) + len(funds_data)
+avg_change = sum([d["Day %"] for d in indexes_data + funds_data]) / total_securities if total_securities > 0 else 0
+gainers = sum(1 for d in indexes_data + funds_data if d["Day %"] > 0)
+losers = sum(1 for d in indexes_data + funds_data if d["Day %"] < 0)
 
-with col2:
-    gainers = len(df[df['day_change_num'] > 0])
-    st.metric("Gainers", gainers, delta=f"{gainers/len(df)*100:.0f}%")
+col1.metric("Total Securities", total_securities)
+col2.metric("Average Day Change", f"{avg_change:.2f}%", delta=f"{avg_change:.2f}%")
+col3.metric("Gainers", gainers, delta=gainers)
+col4.metric("Losers", losers, delta=-losers, delta_color="inverse")
 
-with col3:
-    losers = len(df[df['day_change_num'] < 0])
-    st.metric("Losers", losers, delta=f"-{losers/len(df)*100:.0f}%", delta_color="inverse")
+st.divider()
 
-with col4:
-    avg_change = df['day_change_num'].mean()
-    st.metric("Avg Change", f"{avg_change:+.2f}%", delta=f"{avg_change:+.2f}%")
+# Market Indexes Section
+st.header("📈 Market Indexes")
+if indexes_data:
+    df_indexes = pd.DataFrame(indexes_data)
+    
+    # Style the dataframe
+    def color_negative_red(val):
+        if isinstance(val, str) and '%' in val:
+            return ''
+        color = 'green' if val > 0 else 'red' if val < 0 else 'black'
+        return f'color: {color}'
+    
+    styled_indexes = df_indexes.style.applymap(
+        color_negative_red, 
+        subset=['Day %', '3M %', 'MTD %', 'YTD %']
+    ).format({
+        'Day %': '{:.2f}%',
+        '3M %': '{:.2f}%',
+        'MTD %': '{:.2f}%',
+        'YTD %': '{:.2f}%'
+    })
+    
+    st.dataframe(styled_indexes, use_container_width=True, hide_index=True)
+else:
+    st.warning("No index data available")
 
-st.markdown("---")
+st.divider()
 
-# Main data table
-st.subheader("Portfolio Overview")
+# Sharia-Compliant Funds Section
+st.header("🕌 Sharia-Compliant Funds")
+if funds_data:
+    df_funds = pd.DataFrame(funds_data)
+    
+    styled_funds = df_funds.style.applymap(
+        color_negative_red,
+        subset=['Day %', '3M %', 'MTD %', 'YTD %']
+    ).format({
+        'Day %': '{:.2f}%',
+        '3M %': '{:.2f}%',
+        'MTD %': '{:.2f}%',
+        'YTD %': '{:.2f}%'
+    })
+    
+    st.dataframe(styled_funds, use_container_width=True, hide_index=True)
+    
+    # Download button
+    csv = df_funds.to_csv(index=False)
+    st.download_button(
+        label="📥 Download as CSV",
+        data=csv,
+        file_name=f"sharia_funds_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv"
+    )
+else:
+    st.warning("No fund data available")
 
-# Display styled dataframe
-display_df = df.drop('day_change_num', axis=1)
-styled_df = display_df.style.applymap(color_negative_red, subset=['Day %', 'MTD %', 'YTD %', '3M %'])
-
-st.dataframe(
-    styled_df,
-    use_container_width=True,
-    height=600,
-    hide_index=True
-)
-
-# Download button
-csv = display_df.to_csv(index=False)
-st.download_button(
-    label="📥 Download CSV",
-    data=csv,
-    file_name=f"stock_data_{datetime.now().strftime('%Y%m%d')}.csv",
-    mime="text/csv"
-)
+# Auto-refresh
+if st.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
 
 # Footer
-st.markdown("---")
-st.caption("Data provided by Yahoo Finance | Auto-refreshes every 5 minutes")
+st.divider()
+st.caption("Data provided by Yahoo Finance. Not financial advice. For informational purposes only.")
