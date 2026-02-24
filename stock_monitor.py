@@ -247,6 +247,154 @@ Format your response as JSON:
             return self.fallback_format(indexes_data, funds_data, news)
     
     def fallback_format(self, indexes_data: List[Dict], funds_data: List[Dict], news: List[Dict]) -> Dict:
+        """Fallback formatting without Claude - email-compatible design"""
+        
+        # Generate index rows
+        index_rows = ""
+        for stock in indexes_data:
+            day_class = "positive" if stock['day_change'] >= 0 else "negative"
+            day_sign = "+" if stock['day_change'] >= 0 else ""
+            index_rows += f"""
+                <tr>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-weight: 700; font-size: 15px;"><a href="https://finance.yahoo.com/quote/{stock['ticker']}" target="_blank" style="color: #667eea; text-decoration: none; font-weight: 700;">{stock['ticker']}</a></td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 13px;">{stock['name']}</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-weight: 700; text-align: right;">${stock['price']:.2f}</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; text-align: center; color: {'#10b981' if stock['day_change'] >= 0 else '#ef4444'}; font-weight: 600;">{day_sign}{stock['day_change']:.2f}%</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; text-align: center; color: #10b981; font-weight: 600;">+{stock['three_month_return']:.2f}%</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; text-align: center; color: #10b981; font-weight: 600;">+{stock['mtd_return']:.2f}%</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; text-align: center; color: #10b981; font-weight: 600;">+{stock['ytd_return']:.2f}%</td>
+                </tr>"""
+        
+        # Generate fund rows  
+        fund_rows = ""
+        for stock in funds_data:
+            day_class = "positive" if stock['day_change'] >= 0 else "negative"
+            day_sign = "+" if stock['day_change'] >= 0 else ""
+            fund_rows += f"""
+                <tr>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-weight: 700; font-size: 15px;"><a href="https://finance.yahoo.com/quote/{stock['ticker']}" target="_blank" style="color: #667eea; text-decoration: none; font-weight: 700;">{stock['ticker']}</a></td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 13px;">{stock['name']}</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 12px;">{stock['category']}</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-weight: 700; text-align: right;">${stock['price']:.2f}</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; text-align: center; color: {'#10b981' if stock['day_change'] >= 0 else '#ef4444'}; font-weight: 600;">{day_sign}{stock['day_change']:.2f}%</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; text-align: center; color: #10b981; font-weight: 600;">+{stock['three_month_return']:.2f}%</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; text-align: center; color: #10b981; font-weight: 600;">+{stock['mtd_return']:.2f}%</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; text-align: center; color: #10b981; font-weight: 600;">+{stock['ytd_return']:.2f}%</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; text-align: center; font-size: 13px; color: #6b7280;">{stock['expense_ratio']:.2f}%</td>
+                </tr>"""
+        
+        # Generate news rows
+        news_rows = ""
+        for item in news[:5]:
+            region = "🇺🇸 USA" if "USA" in item.get('region', '') else "🌍 Global"
+            news_rows += f"""
+                <tr>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb;">{region}</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb;"><a href="{item['link']}" target="_blank" style="color: #1a1a2e; text-decoration: none; font-weight: 600;">{item['title']}</a></td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; color: #9ca3af; font-size: 12px;">{item['source']}</td>
+                    <td style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; color: #9ca3af; font-size: 12px; text-align: right;">{item.get('published', 'Recent')}</td>
+                </tr>"""
+        
+        html_email = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #a8c0ff 0%, #d4c5f9 50%, #e5dff9 100%); padding: 40px 20px;">
+    <div style="max-width: 1200px; margin: 0 auto;">
+        <!-- Header Card -->
+        <div style="background: #ffffff; border-radius: 24px; padding: 32px; margin-bottom: 30px; box-shadow: 0 8px 32px rgba(31, 38, 135, 0.15);">
+            <div style="font-size: 24px; font-weight: 700; color: #1a1a2e; margin-bottom: 12px;">
+                👋 Hey! Welcome to My Halal Stock Lab
+                <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: 8px;">Beta</span>
+            </div>
+            <div style="color: #4a4a6a; line-height: 1.6; font-size: 15px;">
+                This is my experimental playground for tracking Sharia-compliant markets. Built entirely with Claude Code and a lot of coffee ☕. 
+                Since it's AI-powered, occasional hiccups are part of the charm! All data is for informational purposes only—do your own research before making any investment decisions. 
+                Let's make halal investing awesome together! 🚀
+            </div>
+        </div>
+        
+        <!-- Date Header -->
+        <div style="text-align: center; color: #1a1a2e; margin-bottom: 30px; font-size: 18px; font-weight: 600;">
+            📊 Sharia-Compliant Stock Monitor • {datetime.now().strftime('%B %d, %Y')}
+        </div>
+        
+        <!-- Market Indexes -->
+        <div style="font-size: 18px; font-weight: 700; color: #1a1a2e; margin: 30px 0 16px 0; padding-left: 8px;">📈 Market Indexes</div>
+        <div style="background: #ffffff; border-radius: 20px; padding: 0; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(31, 38, 135, 0.12); overflow: hidden;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <th style="padding: 16px; text-align: left; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Symbol</th>
+                        <th style="padding: 16px; text-align: left; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Name</th>
+                        <th style="padding: 16px; text-align: right; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Price</th>
+                        <th style="padding: 16px; text-align: center; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Day %</th>
+                        <th style="padding: 16px; text-align: center; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">3M %</th>
+                        <th style="padding: 16px; text-align: center; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">MTD %</th>
+                        <th style="padding: 16px; text-align: center; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">YTD %</th>
+                    </tr>
+                </thead>
+                <tbody>{index_rows}</tbody>
+            </table>
+        </div>
+        
+        <!-- Sharia-Compliant Funds -->
+        <div style="font-size: 18px; font-weight: 700; color: #1a1a2e; margin: 30px 0 16px 0; padding-left: 8px;">🕌 Sharia-Compliant Funds</div>
+        <div style="background: #ffffff; border-radius: 20px; padding: 0; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(31, 38, 135, 0.12); overflow: hidden;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <th style="padding: 16px; text-align: left; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Symbol</th>
+                        <th style="padding: 16px; text-align: left; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Name</th>
+                        <th style="padding: 16px; text-align: left; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Category</th>
+                        <th style="padding: 16px; text-align: right; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Price</th>
+                        <th style="padding: 16px; text-align: center; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Day %</th>
+                        <th style="padding: 16px; text-align: center; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">3M %</th>
+                        <th style="padding: 16px; text-align: center; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">MTD %</th>
+                        <th style="padding: 16px; text-align: center; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">YTD %</th>
+                        <th style="padding: 16px; text-align: center; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Expense</th>
+                    </tr>
+                </thead>
+                <tbody>{fund_rows}</tbody>
+            </table>
+        </div>
+        
+        <!-- News -->
+        <div style="font-size: 18px; font-weight: 700; color: #1a1a2e; margin: 30px 0 16px 0; padding-left: 8px;">📰 Sharia-Compliant Investing News</div>
+        <div style="background: #ffffff; border-radius: 20px; padding: 0; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(31, 38, 135, 0.12); overflow: hidden;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <th style="padding: 16px; text-align: left; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Region</th>
+                        <th style="padding: 16px; text-align: left; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Headline</th>
+                        <th style="padding: 16px; text-align: left; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Source</th>
+                        <th style="padding: 16px; text-align: right; font-size: 12px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.5px;">Time</th>
+                    </tr>
+                </thead>
+                <tbody>{news_rows}</tbody>
+            </table>
+        </div>
+        
+        <!-- Footer -->
+        <div style="background: #ffffff; border-radius: 16px; padding: 20px; margin-top: 40px; text-align: center; font-size: 12px; color: #6b7280; line-height: 1.6; box-shadow: 0 4px 16px rgba(31, 38, 135, 0.08);">
+            <strong style="color: #1a1a2e;">Disclaimer:</strong> This dashboard is provided for informational and educational purposes only. 
+            All data is sourced from Yahoo Finance and Google News and may contain errors or delays. 
+            This is not financial advice. Always do your own research and consult with a qualified financial advisor before investing. 
+            Past performance does not guarantee future results. Sharia compliance determinations are based on fund provider classifications 
+            and should be independently verified with qualified Islamic scholars.
+        </div>
+    </div>
+</body>
+</html>"""
+        
+        return {
+            "executive_summary": f"Portfolio tracking {len(indexes_data) + len(funds_data)} securities",
+            "html_email": html_email,
+            "teams_summary": f"Stock report generated for {len(indexes_data)} indexes and {len(funds_data)} funds"
+        }
+    
         """Fallback formatting without Claude - uses glassmorphism design"""
         
         # Generate index rows
