@@ -2,17 +2,12 @@ name: Daily Stock Report
 
 on:
   schedule:
-    # Run at 6:00 PM EST every weekday (after market close)
-    # Cron is in UTC, so 6 PM EST = 11 PM UTC (23:00)
     - cron: '0 23 * * 1-5'
-  
-  # Allow manual triggering for testing
   workflow_dispatch:
 
 jobs:
   generate-report:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -38,7 +33,7 @@ jobs:
         run: |
           python stock_monitor.py
       
-      - name: Upload logs (optional)
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v3
         with:
