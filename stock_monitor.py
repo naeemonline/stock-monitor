@@ -1,60 +1,92 @@
+#!/usr/bin/env python3
 """
-Automated Stock Monitor with Claude API Integration
-Minimalist design - clean tables, simple charts, intelligent insights
+Automated Stock Monitor with Claude AI
+Sends daily email reports and Teams notifications
 """
 
 import os
-import json
-import requests
+import sys
 from datetime import datetime, timedelta
-from anthropic import Anthropic
+from typing import Dict, List, Optional
+import json
+import re
+
 import yfinance as yf
 import pandas as pd
-from typing import Dict, List, Any
+import requests
+import feedparser
+from anthropic import Anthropic
 
 # ============================================================================
-# CONFIGURATION - Edit these with your stocks
+# CONFIGURATION
 # ============================================================================
 
-TICKERS = [
-    # Major Indices (use ^ prefix for index symbols)
-    "SPY", "QQQ", "DIA",  # ETFs tracking major indices
-    
-    # SP Funds ETFs - UPDATE THESE WITH YOUR ACTUAL HOLDINGS
-    "SPUS",   # SP Funds S&P 500 Sharia Industry Exclusions ETF
-    
-    # Other Islamic Finance ETFs
-    "HLAL",   # Wahed FTSE USA Shariah ETF
-    "UMMA",   # Wahed Dow Jones Islamic World ETF
-    
-    # Large Cap Tech (commonly Sharia-compliant)
-    "AAPL", "MSFT", "GOOGL", "NVDA", "META",
-    
-    # Add more of your actual holdings below...
-    # Example: "AMZN", "TSLA", "ADBE", "CRM", etc.
+# Market Indexes (tracked separately from funds)
+INDEXES = [
+    {"ticker": "SPY", "name": "S&P 500", "category": "Index"},
+    {"ticker": "QQQ", "name": "Nasdaq 100", "category": "Index"},
+    {"ticker": "DIA", "name": "Dow Jones", "category": "Index"},
+    {"ticker": "IWM", "name": "Russell 2000", "category": "Index"},
 ]
 
+# Sharia-Compliant Funds with metadata
+FUNDS = [
+    # SP Funds ETFs
+    {"ticker": "SPUS", "name": "SP Funds S&P 500 Sharia Industry Exclusions ETF", "category": "US Equity Large-Cap", "expense_ratio": 0.49},
+    {"ticker": "SPSK", "name": "SP Funds Dow Jones Global Sukuk ETF", "category": "Fixed Income/Sukuk", "expense_ratio": 0.55},
+    {"ticker": "SPRE", "name": "SP Funds S&P Global REIT Sharia ETF", "category": "Real Estate", "expense_ratio": 0.59},
+    {"ticker": "SPTE", "name": "SP Funds S&P Global Technology ETF", "category": "Technology", "expense_ratio": 0.55},
+    {"ticker": "SPWO", "name": "SP Funds S&P World ex-US ETF", "category": "International Equity", "expense_ratio": 0.55},
+    
+    # Wahed ETFs
+    {"ticker": "HLAL", "name": "Wahed FTSE USA Shariah ETF", "category": "US Equity Large/Mid-Cap", "expense_ratio": 0.50},
+    {"ticker": "UMMA", "name": "Wahed Dow Jones Islamic World ETF", "category": "International Equity", "expense_ratio": 0.65},
+    
+    # SP Funds Target Date Mutual Funds
+    {"ticker": "SPTAX", "name": "SP Funds 2030 Target Date Fund", "category": "Target Date 2030", "expense_ratio": 1.40},
+    {"ticker": "SPTBX", "name": "SP Funds 2040 Target Date Fund", "category": "Target Date 2040", "expense_ratio": 1.40},
+    {"ticker": "SPTCX", "name": "SP Funds 2050 Target Date Fund", "category": "Target Date 2050", "expense_ratio": 1.40},
+]
+
+# Combine all tickers for data fetching
+ALL_TICKERS = [item["ticker"] for item in INDEXES + FUNDS]
+
+# ============================================================================
+# STOCK MONITOR CLASS
+# ============================================================================
+
 class StockMonitor:
+    """Automated stock monitoring with Claude AI formatting"""
+    
     def __init__(self):
-        """Initialize the stock monitor with API clients"""
-        self.anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-        self.teams_webhook = os.environ.get("TEAMS_WEBHOOK_URL")
-        self.email_from = os.environ.get("EMAIL_FROM")
-        self.email_to = os.environ.get("EMAIL_TO")
-        self.sendgrid_api_key = os.environ.get("SENDGRID_API_KEY")
+        """Initialize with API credentials from environment"""
+        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        self.sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+        self.teams_webhook = os.getenv("TEAMS_WEBHOOK_URL")
+        self.email_from = os.getenv("EMAIL_FROM", "onboarding@resend.dev")
+        self.email_to = os.getenv("EMAIL_TO")
         
-    def fetch_stock_data(self, ticker: str) -> Dict[str, Any]:
-        """Fetch comprehensive stock data for a single ticker"""
+        if not self.anthropic_api_key:
+            print("⚠️  ANTHROPIC_API_KEY not set")
+    
+    def fetch_stock_data(self, ticker: str, metadata: dict) -> Optional[Dict]:
+        """Fetch comprehensive stock data including returns"""
         try:
             stock = yf.Ticker(ticker)
-            hist = stock.history(period="1y")
             
-            if hist.empty:
-                print(f"  ⚠️  No data for {ticker}")
+            # Get current price
+            info = stock.info
+            current_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
+            
+            if not current_price:
+                print(f"  ⚠️  No price data for {ticker}")
                 return None
             
-            current_price = hist['Close'].iloc[-1]
-            prev_close = hist['Close'].iloc[-2] if len(hist) > 1 else current_price
+            # Get historical data for returns calculation
+            hist = stock.history(period="1y")
+            if hist.empty:
+                print(f"  ⚠️  No historical data for {ticker}")
+                return None
             
             # Calculate time-based returns
             today = datetime.now()
@@ -68,176 +100,186 @@ class StockMonitor:
             hist_ytd = hist[hist.index >= pd.Timestamp(year_start, tz=hist.index.tz)]
             
             # Calculate returns
-            day_change = ((current_price - prev_close) / prev_close * 100)
-            mtd_return = ((current_price - hist_month['Close'].iloc[0]) / hist_month['Close'].iloc[0] * 100) if len(hist_month) > 0 else 0
-            three_m_return = ((current_price - hist_3m['Close'].iloc[0]) / hist_3m['Close'].iloc[0] * 100) if len(hist_3m) > 0 else 0
-            ytd_return = ((current_price - hist_ytd['Close'].iloc[0]) / hist_ytd['Close'].iloc[0] * 100) if len(hist_ytd) > 0 else 0
-            
-            # Get basic info
-            info = stock.info
+            mtd_return = ((current_price / hist_month['Close'].iloc[0]) - 1) * 100 if len(hist_month) > 0 else 0
+            three_month_return = ((current_price / hist_3m['Close'].iloc[0]) - 1) * 100 if len(hist_3m) > 0 else 0
+            ytd_return = ((current_price / hist_ytd['Close'].iloc[0]) - 1) * 100 if len(hist_ytd) > 0 else 0
+            day_change = info.get('regularMarketChangePercent', 0)
             
             return {
-                'ticker': ticker,
-                'name': info.get('longName', ticker),
-                'current_price': round(current_price, 2),
-                'day_change': round(day_change, 2),
-                'mtd_return': round(mtd_return, 2),
-                'ytd_return': round(ytd_return, 2),
-                'three_month_return': round(three_m_return, 2),
-                'volume': info.get('volume', 0),
-                'market_cap': info.get('marketCap', 0),
-                'sector': info.get('sector', 'N/A')
+                "ticker": ticker,
+                "name": metadata.get("name", ticker),
+                "category": metadata.get("category", "N/A"),
+                "expense_ratio": metadata.get("expense_ratio", None),
+                "price": current_price,
+                "day_change": day_change,
+                "mtd_return": mtd_return,
+                "three_month_return": three_month_return,
+                "ytd_return": ytd_return,
+                "volume": info.get('volume', 0),
+                "market_cap": info.get('marketCap', 0),
+                "sector": info.get('sector', 'N/A'),
             }
+            
         except Exception as e:
-            print(f"  ❌ Error fetching {ticker}: {str(e)}")
+            print(f"  ❌ Error fetching {ticker}: {e}")
             return None
     
-    def fetch_all_stocks(self) -> List[Dict[str, Any]]:
-        """Fetch data for all tickers"""
-        print(f"\n📊 Fetching data for {len(TICKERS)} stocks...")
-        stock_data = []
-        
-        for i, ticker in enumerate(TICKERS, 1):
-            print(f"  [{i}/{len(TICKERS)}] Fetching {ticker}...", end=" ")
-            data = self.fetch_stock_data(ticker)
-            if data:
-                stock_data.append(data)
-                print("✓")
-            else:
-                print("✗")
-        
-        print(f"\n✅ Successfully fetched {len(stock_data)} stocks\n")
-        return stock_data
-    
-    def fetch_market_news(self, max_articles: int = 10) -> List[Dict[str, str]]:
-        """Fetch recent market news using RSS feed"""
+    def fetch_sharia_news(self) -> List[Dict]:
+        """Fetch Sharia-compliant investing news using Google News RSS"""
         try:
-            import feedparser
-            feed = feedparser.parse('https://news.google.com/rss/search?q=stock+market+OR+nasdaq+OR+sp500&hl=en-US&gl=US&ceid=US:en')
+            # Search for Sharia/Islamic/Halal investing news
+            queries = [
+                "Sharia compliant investing USA",
+                "Islamic finance ETF",
+                "Halal investing news",
+                "SP Funds Islamic",
+                "Shariah investing"
+            ]
             
-            news_items = []
-            for entry in feed.entries[:max_articles]:
-                news_items.append({
-                    'title': entry.title,
-                    'link': entry.link,
-                    'published': entry.get('published', '')
-                })
-            return news_items
+            all_articles = []
+            
+            for query in queries:
+                url = f"https://news.google.com/rss/search?q={query.replace(' ', '+')}"
+                feed = feedparser.parse(url)
+                
+                for entry in feed.entries[:3]:  # Get top 3 from each query
+                    all_articles.append({
+                        "title": entry.title,
+                        "link": entry.link,
+                        "published": entry.get('published', ''),
+                        "source": entry.get('source', {}).get('title', 'Unknown')
+                    })
+            
+            # Remove duplicates and sort by recency (USA first)
+            seen_titles = set()
+            unique_articles = []
+            for article in all_articles:
+                if article['title'] not in seen_titles:
+                    seen_titles.add(article['title'])
+                    unique_articles.append(article)
+            
+            # Prioritize USA news
+            usa_articles = [a for a in unique_articles if any(kw in a['title'].lower() or kw in a['source'].lower() 
+                          for kw in ['usa', 'us ', 'america', 'united states', 'sp funds', 'wahed'])]
+            global_articles = [a for a in unique_articles if a not in usa_articles]
+            
+            return (usa_articles + global_articles)[:10]
+            
         except Exception as e:
-            print(f"  ⚠️  Could not fetch news: {e}")
+            print(f"⚠️  Error fetching news: {e}")
             return []
     
-    def format_with_claude(self, stock_data: List[Dict], news_data: List[Dict]) -> Dict[str, str]:
-        """Use Claude API to intelligently format the data"""
-        
-        # Create a simple data summary for Claude
-        summary_stats = {
-            'total_stocks': len(stock_data),
-            'gainers': len([s for s in stock_data if s['day_change'] > 0]),
-            'losers': len([s for s in stock_data if s['day_change'] < 0]),
-            'top_gainer': max(stock_data, key=lambda x: x['day_change']),
-            'top_loser': min(stock_data, key=lambda x: x['day_change']),
-            'avg_day_change': sum(s['day_change'] for s in stock_data) / len(stock_data)
-        }
-        
-        # Prepare prompt for Claude
-        prompt = f"""You are analyzing a stock portfolio. Here's today's data:
-
-PORTFOLIO SUMMARY:
-- Total stocks tracked: {summary_stats['total_stocks']}
-- Gainers: {summary_stats['gainers']} | Losers: {summary_stats['losers']}
-- Average daily change: {summary_stats['avg_day_change']:.2f}%
-- Top gainer: {summary_stats['top_gainer']['ticker']} (+{summary_stats['top_gainer']['day_change']:.2f}%)
-- Top loser: {summary_stats['top_loser']['ticker']} ({summary_stats['top_loser']['day_change']:.2f}%)
-
-STOCK DATA:
-{json.dumps(stock_data, indent=2)}
-
-RECENT NEWS HEADLINES:
-{json.dumps([n['title'] for n in news_data[:5]], indent=2)}
-
-Please provide:
-1. EXECUTIVE_SUMMARY: A 2-3 sentence overview of today's market performance and key themes (keep it concise and professional)
-2. HTML_EMAIL: A clean, minimalist HTML email with:
-   - Brief executive summary at top
-   - Clean table of all stocks with current price, day change, MTD, YTD, 3M returns
-   - Color coding: green for positive, red for negative returns
-   - Top 3 news headlines with links
-   - Simple, professional styling (white background, minimal colors)
-3. TEAMS_MESSAGE: JSON for Microsoft Teams adaptive card (modern, clean design)
-
-Return your response in this exact JSON format:
-{{
-  "executive_summary": "Your summary here",
-  "html_email": "Full HTML content here",
-  "teams_card": {{...adaptive card JSON...}}
-}}"""
-
-        print("🤖 Asking Claude to format the data...")
+    def format_with_claude(self, indexes_data: List[Dict], funds_data: List[Dict], news: List[Dict]) -> Dict:
+        """Use Claude to format the data into email and Teams content"""
+        if not self.anthropic_api_key:
+            return self.fallback_format(indexes_data, funds_data, news)
         
         try:
-            message = self.anthropic_client.messages.create(
-                model="claude-haiku-4-5-20251001",  # Using Haiku for cost efficiency
+            client = Anthropic(api_key=self.anthropic_api_key)
+            
+            prompt = f"""You are a financial reporting assistant. Format this stock market data into a professional daily report.
+
+TODAY'S DATE: {datetime.now().strftime('%A, %B %d, %Y')}
+
+MARKET INDEXES:
+{json.dumps(indexes_data, indent=2)}
+
+SHARIA-COMPLIANT FUNDS:
+{json.dumps(funds_data, indent=2)}
+
+TOP NEWS (prioritized: USA Sharia-compliant news first, then global):
+{json.dumps(news, indent=2)}
+
+Generate a response with EXACTLY this structure:
+
+1. EXECUTIVE SUMMARY (2-3 sentences about market performance and key trends)
+
+2. HTML EMAIL with these sections IN THIS ORDER:
+   a) Market Indexes table (separate from funds)
+   b) Sharia-Compliant Funds table 
+   c) Top News (Sharia-compliant investing focus)
+
+TABLE REQUIREMENTS:
+- Columns in this EXACT order: Symbol | Name | Category | Price | Day % | 3M % | MTD % | YTD % | Expense Ratio
+- Color code: green for positive, red for negative
+- Clean, minimalist design (white background, simple borders)
+- Expense Ratio column: show as "X.XX%" or "—" for indexes
+
+3. TEAMS SUMMARY (1-2 sentences max)
+
+Format your response as JSON:
+{{
+  "executive_summary": "...",
+  "html_email": "...",
+  "teams_summary": "..."
+}}"""
+
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
                 max_tokens=4000,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
+                messages=[{"role": "user", "content": prompt}]
             )
             
-            # Extract the response
-            response_text = message.content[0].text
+            content = response.content[0].text
             
-            # Parse JSON response
-            # Claude might wrap it in markdown, so let's clean it
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+            # Extract JSON from response (handle markdown code blocks)
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
             
-            result = json.loads(response_text)
-            print("✅ Claude formatted the data successfully\n")
-            return result
+            result = json.loads(content)
+            
+            return {
+                "executive_summary": result.get("executive_summary", "Market data updated."),
+                "html_email": result.get("html_email", ""),
+                "teams_summary": result.get("teams_summary", "")
+            }
             
         except Exception as e:
             print(f"❌ Claude API error: {e}")
-            # Fallback to basic formatting
-            return self._create_basic_format(stock_data, news_data, summary_stats)
+            return self.fallback_format(indexes_data, funds_data, news)
     
-    def _create_basic_format(self, stock_data, news_data, summary_stats):
-        """Fallback basic formatting if Claude API fails"""
+    def fallback_format(self, indexes_data: List[Dict], funds_data: List[Dict], news: List[Dict]) -> Dict:
+        """Fallback formatting without Claude"""
         html_email = f"""
         <html>
-        <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
-            <h2>Daily Stock Report - {datetime.now().strftime('%B %d, %Y')}</h2>
-            <p><strong>Portfolio Overview:</strong> {summary_stats['gainers']} gainers, {summary_stats['losers']} losers</p>
+        <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
+            <h2>📊 Daily Stock Report - {datetime.now().strftime('%B %d, %Y')}</h2>
+            
+            <h3>Market Indexes</h3>
             <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
                 <tr style="background-color: #f0f0f0;">
-                    <th>Ticker</th><th>Price</th><th>Day %</th><th>MTD %</th><th>YTD %</th><th>3M %</th>
+                    <th>Symbol</th><th>Name</th><th>Price</th><th>Day %</th><th>3M %</th><th>MTD %</th><th>YTD %</th>
                 </tr>
-                {''.join([f'''<tr>
-                    <td>{s['ticker']}</td>
-                    <td>${s['current_price']}</td>
-                    <td style="color: {'green' if s['day_change'] > 0 else 'red'}">{s['day_change']:+.2f}%</td>
-                    <td>{s['mtd_return']:+.2f}%</td>
-                    <td>{s['ytd_return']:+.2f}%</td>
-                    <td>{s['three_month_return']:+.2f}%</td>
-                </tr>''' for s in stock_data])}
+                {"".join([f"<tr><td>{s['ticker']}</td><td>{s['name']}</td><td>${s['price']:.2f}</td><td style='color: {'green' if s['day_change'] >= 0 else 'red'}'>{s['day_change']:.2f}%</td><td>{s['three_month_return']:.2f}%</td><td>{s['mtd_return']:.2f}%</td><td>{s['ytd_return']:.2f}%</td></tr>" for s in indexes_data])}
             </table>
+            
+            <h3>Sharia-Compliant Funds</h3>
+            <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
+                <tr style="background-color: #f0f0f0;">
+                    <th>Symbol</th><th>Name</th><th>Category</th><th>Price</th><th>Day %</th><th>3M %</th><th>MTD %</th><th>YTD %</th><th>Expense Ratio</th>
+                </tr>
+                {"".join([f"<tr><td>{s['ticker']}</td><td>{s['name']}</td><td>{s['category']}</td><td>${s['price']:.2f}</td><td style='color: {'green' if s['day_change'] >= 0 else 'red'}'>{s['day_change']:.2f}%</td><td>{s['three_month_return']:.2f}%</td><td>{s['mtd_return']:.2f}%</td><td>{s['ytd_return']:.2f}%</td><td>{s['expense_ratio']:.2f}%</td></tr>" for s in funds_data])}
+            </table>
+            
+            <h3>📰 Sharia-Compliant Investing News</h3>
+            <ul>
+                {"".join([f"<li><a href='{n['link']}'>{n['title']}</a> - {n['source']}</li>" for n in news[:5]])}
+            </ul>
         </body>
         </html>
         """
         
         return {
-            "executive_summary": f"Portfolio tracking {len(stock_data)} stocks",
+            "executive_summary": f"Portfolio tracking {len(indexes_data) + len(funds_data)} securities",
             "html_email": html_email,
-            "teams_card": {}
+            "teams_summary": f"Stock report generated for {len(indexes_data)} indexes and {len(funds_data)} funds"
         }
     
     def send_email(self, html_content: str, subject: str):
         """Send email via Resend or SendGrid"""
         if not self.sendgrid_api_key or not self.email_to:
-            print("⚠️  Email not configured (missing SENDGRID_API_KEY or EMAIL_TO)")
+            print("⚠️  Email not configured (missing API_KEY or EMAIL_TO)")
             return
         
         print("📧 Sending email...")
@@ -254,7 +296,7 @@ Return your response in this exact JSON format:
                     "Content-Type": "application/json"
                 }
                 data = {
-                    "from": self.email_from or "onboarding@resend.dev",
+                    "from": self.email_from,
                     "to": [self.email_to],
                     "subject": subject,
                     "html": html_content
@@ -271,7 +313,7 @@ Return your response in this exact JSON format:
                     "personalizations": [{
                         "to": [{"email": self.email_to}]
                     }],
-                    "from": {"email": self.email_from or "stock-monitor@yourdomain.com"},
+                    "from": {"email": self.email_from},
                     "subject": subject,
                     "content": [{
                         "type": "text/html",
@@ -290,7 +332,7 @@ Return your response in this exact JSON format:
         except Exception as e:
             print(f"❌ Email error: {e}")
     
-    def post_to_teams(self, teams_card: dict, summary: str):
+    def post_to_teams(self, summary: str):
         """Post to Microsoft Teams via webhook"""
         if not self.teams_webhook:
             print("⚠️  Teams webhook not configured")
@@ -326,40 +368,60 @@ Return your response in this exact JSON format:
     def run(self):
         """Main execution"""
         print("\n" + "="*60)
-        print("  AUTOMATED STOCK MONITOR")
-        print("  " + datetime.now().strftime('%A, %B %d, %Y %I:%M %p'))
-        print("="*60)
+        print(f"  AUTOMATED STOCK MONITOR")
+        print(f"  {datetime.now().strftime('%A, %B %d, %Y %I:%M %p')}")
+        print("="*60 + "\n")
         
         # Fetch stock data
-        stock_data = self.fetch_all_stocks()
+        print(f"📊 Fetching data for {len(ALL_TICKERS)} securities...")
         
-        if not stock_data:
-            print("❌ No stock data available. Exiting.")
+        indexes_data = []
+        funds_data = []
+        
+        for idx, item in enumerate(INDEXES + FUNDS, 1):
+            ticker = item["ticker"]
+            print(f"  [{idx}/{len(ALL_TICKERS)}] Fetching {ticker}... ", end="")
+            
+            data = self.fetch_stock_data(ticker, item)
+            if data:
+                if item in INDEXES:
+                    indexes_data.append(data)
+                else:
+                    funds_data.append(data)
+                print("✓")
+            else:
+                print("✗")
+        
+        print(f"\n✅ Successfully fetched {len(indexes_data)} indexes and {len(funds_data)} funds\n")
+        
+        if len(indexes_data) == 0 and len(funds_data) == 0:
+            print("❌ No data available. Exiting.")
             return
         
         # Fetch news
-        print("📰 Fetching market news...")
-        news_data = self.fetch_market_news()
-        print(f"✅ Found {len(news_data)} news articles\n")
+        print("📰 Fetching Sharia-compliant investing news...")
+        news = self.fetch_sharia_news()
+        print(f"✅ Found {len(news)} news articles\n")
         
         # Format with Claude
-        formatted_output = self.format_with_claude(stock_data, news_data)
+        print("🤖 Asking Claude to format the data...")
+        formatted = self.format_with_claude(indexes_data, funds_data, news)
+        print("✅ Claude formatted the data successfully\n")
         
         # Send email
         subject = f"📊 Daily Stock Report - {datetime.now().strftime('%b %d, %Y')}"
-        self.send_email(formatted_output['html_email'], subject)
+        self.send_email(formatted['html_email'], subject)
         
         # Post to Teams
-        self.post_to_teams(
-            formatted_output.get('teams_card', {}),
-            formatted_output['executive_summary']
-        )
+        self.post_to_teams(formatted.get('teams_summary', formatted['executive_summary']))
         
         print("\n" + "="*60)
         print("✅ DAILY STOCK REPORT COMPLETE")
         print("="*60 + "\n")
-        
-        return formatted_output
+
+# ============================================================================
+# MAIN
+# ============================================================================
 
 if __name__ == "__main__":
     monitor = StockMonitor()
