@@ -68,13 +68,20 @@ class StockMonitor:
     def __init__(self):
         """Initialize with API credentials from environment"""
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        # Support both Resend and SendGrid
+        self.resend_api_key = os.getenv("RESEND_API_KEY")
         self.sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+        self.email_api_key = self.resend_api_key or self.sendgrid_api_key
         self.teams_webhook = os.getenv("TEAMS_WEBHOOK_URL")
         self.email_from = os.getenv("EMAIL_FROM", "onboarding@resend.dev")
         self.email_to = os.getenv("EMAIL_TO")
         
         if not self.anthropic_api_key:
             print("⚠️  ANTHROPIC_API_KEY not set")
+        if not self.email_api_key:
+            print("⚠️  No email API key found (set RESEND_API_KEY or SENDGRID_API_KEY)")
+        if not self.email_to:
+            print("⚠️  EMAIL_TO not set")
     
     def fetch_stock_data(self, ticker: str, metadata: dict) -> Optional[Dict]:
         """Fetch comprehensive stock data including returns"""
@@ -582,21 +589,24 @@ class StockMonitor:
     
     def send_email(self, html_content: str, subject: str):
         """Send email via Resend or SendGrid"""
-        if not self.sendgrid_api_key or not self.email_to:
+        if not self.email_api_key or not self.email_to:
             print("⚠️  Email not configured (missing API_KEY or EMAIL_TO)")
+            print(f"     EMAIL_API_KEY set: {bool(self.email_api_key)}")
+            print(f"     EMAIL_TO set: {bool(self.email_to)}")
             return
         
         print("📧 Sending email...")
         
         try:
             # Check if using Resend (API key starts with 're_') or SendGrid (starts with 'SG.')
-            is_resend = self.sendgrid_api_key.startswith('re_')
+            is_resend = self.email_api_key.startswith('re_')
             
             if is_resend:
                 # Resend API
+                print("   Using Resend API...")
                 url = "https://api.resend.com/emails"
                 headers = {
-                    "Authorization": f"Bearer {self.sendgrid_api_key}",
+                    "Authorization": f"Bearer {self.email_api_key}",
                     "Content-Type": "application/json"
                 }
                 data = {
@@ -608,9 +618,10 @@ class StockMonitor:
                 success_code = 200
             else:
                 # SendGrid API
+                print("   Using SendGrid API...")
                 url = "https://api.sendgrid.com/v3/mail/send"
                 headers = {
-                    "Authorization": f"Bearer {self.sendgrid_api_key}",
+                    "Authorization": f"Bearer {self.email_api_key}",
                     "Content-Type": "application/json"
                 }
                 data = {
