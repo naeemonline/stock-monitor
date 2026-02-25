@@ -143,14 +143,27 @@ class StockMonitor:
         try:
             all_articles = []
             
-            # PHASE 1: RSS Feeds (Confirmed Sources)
-            rss_feeds = [
-                {"url": "https://www.reddit.com/r/IslamicFinance/.rss", "name": "r/IslamicFinance"},
-                {"url": "https://www.reddit.com/r/HalalInvesting/.rss", "name": "r/HalalInvesting"},
-                {"url": "https://www.islamicfinanceguru.com/feed", "name": "Islamic Finance Guru"},
-                {"url": "https://spfunds.com/blog/feed", "name": "SP Funds"},
-                {"url": "https://blog.zoya.finance/feed", "name": "Zoya Finance"},
+            # RSS Feeds - Tier 1: Core Sources (Always work)
+            rss_feeds_tier1 = [
+                {"url": "https://www.reddit.com/r/IslamicFinance/.rss", "name": "r/IslamicFinance", "priority": 1},
+                {"url": "https://www.reddit.com/r/HalalInvesting/.rss", "name": "r/HalalInvesting", "priority": 1},
+                {"url": "https://www.islamicfinanceguru.com/feed", "name": "Islamic Finance Guru", "priority": 1},
+                {"url": "https://spfunds.com/blog/feed", "name": "SP Funds", "priority": 1},
+                {"url": "https://blog.zoya.finance/feed", "name": "Zoya Finance", "priority": 1},
             ]
+            
+            # RSS Feeds - Tier 2: Additional Sources (May have RSS)
+            rss_feeds_tier2 = [
+                {"url": "https://www.wahed.com/mme/feed", "name": "Wahed Invest", "priority": 2},
+                {"url": "https://www.salaamgateway.com/feed", "name": "Salaam Gateway", "priority": 2},
+                {"url": "https://academy.musaffa.com/feed", "name": "Musaffa Academy", "priority": 2},
+                {"url": "https://joebradford.net/feed", "name": "Joe Bradford", "priority": 2},
+                {"url": "https://www.zawya.com/en/feed", "name": "ZAWYA", "priority": 3},
+                {"url": "https://www.islamicfinancenews.com/feed", "name": "Islamic Finance News", "priority": 2},
+            ]
+            
+            # Combine all feeds
+            rss_feeds = rss_feeds_tier1 + rss_feeds_tier2
             
             print("  📡 Fetching from RSS feeds...")
             for feed_config in rss_feeds:
@@ -174,10 +187,10 @@ class StockMonitor:
                 try:
                     url = "https://newsapi.org/v2/everything"
                     params = {
-                        "q": "(halal investing OR islamic finance OR sukuk OR shariah compliant) AND (Zoya OR Wahed OR SP Funds OR Amana)",
+                        "q": "(halal investing OR islamic finance OR sukuk OR shariah compliant OR riba-free) AND (Zoya OR Wahed OR SP Funds OR Amana OR Musaffa OR AAOIFI)",
                         "language": "en",
                         "sortBy": "publishedAt",
-                        "pageSize": 15,
+                        "pageSize": 20,
                         "apiKey": newsapi_key
                     }
                     
