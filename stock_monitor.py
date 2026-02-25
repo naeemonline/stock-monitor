@@ -139,42 +139,76 @@ class StockMonitor:
             return None
     
     def fetch_sharia_news(self) -> List[Dict]:
-        """Fetch Sharia-compliant investing news using Google News RSS"""
+        """Fetch halal investing news from RSS feeds + NewsAPI"""
         try:
-            # Search for Sharia/Islamic/Halal investing news
-            queries = [
-                "Sharia compliant investing USA",
-                "Islamic finance ETF",
-                "Halal investing news",
-                "SP Funds Islamic",
-                "Shariah investing"
-            ]
-            
             all_articles = []
             
-            for query in queries:
-                url = f"https://news.google.com/rss/search?q={query.replace(' ', '+')}"
-                feed = feedparser.parse(url)
-                
-                for entry in feed.entries[:3]:  # Get top 3 from each query
-                    all_articles.append({
-                        "title": entry.title,
-                        "link": entry.link,
-                        "published": entry.get('published', ''),
-                        "source": entry.get('source', {}).get('title', 'Unknown')
-                    })
+            # PHASE 1: RSS Feeds (Confirmed Sources)
+            rss_feeds = [
+                {"url": "https://www.reddit.com/r/IslamicFinance/.rss", "name": "r/IslamicFinance"},
+                {"url": "https://www.reddit.com/r/HalalInvesting/.rss", "name": "r/HalalInvesting"},
+                {"url": "https://www.islamicfinanceguru.com/feed", "name": "Islamic Finance Guru"},
+                {"url": "https://spfunds.com/blog/feed", "name": "SP Funds"},
+                {"url": "https://blog.zoya.finance/feed", "name": "Zoya Finance"},
+            ]
             
-            # Remove duplicates and sort by recency (USA first)
+            print("  📡 Fetching from RSS feeds...")
+            for feed_config in rss_feeds:
+                try:
+                    feed = feedparser.parse(feed_config["url"])
+                    for entry in feed.entries[:5]:  # Top 5 from each feed
+                        published = entry.get('published', entry.get('updated', ''))
+                        all_articles.append({
+                            "title": entry.title,
+                            "link": entry.link,
+                            "published": published,
+                            "source": feed_config["name"]
+                        })
+                except Exception as e:
+                    print(f"     ⚠️  {feed_config['name']}: {str(e)[:50]}")
+            
+            # PHASE 2: NewsAPI (if API key available)
+            newsapi_key = os.getenv("NEWSAPI_KEY")
+            if newsapi_key:
+                print("  📡 Fetching from NewsAPI...")
+                try:
+                    url = "https://newsapi.org/v2/everything"
+                    params = {
+                        "q": "(halal investing OR islamic finance OR sukuk OR shariah compliant) AND (Zoya OR Wahed OR SP Funds OR Amana)",
+                        "language": "en",
+                        "sortBy": "publishedAt",
+                        "pageSize": 15,
+                        "apiKey": newsapi_key
+                    }
+                    
+                    response = requests.get(url, params=params, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        for article in data.get("articles", []):
+                            all_articles.append({
+                                "title": article["title"],
+                                "link": article["url"],
+                                "published": article["publishedAt"],
+                                "source": article["source"]["name"]
+                            })
+                        print(f"     ✅ NewsAPI: {len(data.get('articles', []))} articles")
+                    else:
+                        print(f"     ⚠️  NewsAPI error: {response.status_code}")
+                except Exception as e:
+                    print(f"     ⚠️  NewsAPI error: {str(e)[:50]}")
+            
+            # Remove duplicates
             seen_titles = set()
             unique_articles = []
             for article in all_articles:
-                if article['title'] not in seen_titles:
-                    seen_titles.add(article['title'])
+                title_lower = article['title'].lower()
+                if title_lower not in seen_titles:
+                    seen_titles.add(title_lower)
                     unique_articles.append(article)
             
             # Prioritize USA news
             usa_articles = [a for a in unique_articles if any(kw in a['title'].lower() or kw in a['source'].lower() 
-                          for kw in ['usa', 'us ', 'america', 'united states', 'sp funds', 'wahed'])]
+                          for kw in ['usa', 'us ', 'america', 'united states', 'sp funds', 'wahed', 'zoya'])]
             global_articles = [a for a in unique_articles if a not in usa_articles]
             
             return (usa_articles + global_articles)[:10]
